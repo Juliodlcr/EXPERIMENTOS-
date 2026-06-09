@@ -6,7 +6,6 @@
   <title>Plasma Ring</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-
     body {
       background: #05050f;
       min-height: 100vh;
@@ -14,14 +13,8 @@
       cursor: none;
       font-family: system-ui, sans-serif;
     }
+    canvas { position: fixed; top: 0; left: 0; z-index: 0; }
 
-    canvas {
-      position: fixed;
-      top: 0; left: 0;
-      z-index: 0;
-    }
-
-    /* Contenido de ejemplo encima del canvas */
     .content {
       position: relative;
       z-index: 10;
@@ -35,68 +28,54 @@
       color: #fff;
       pointer-events: none;
     }
-
     .label {
       font-size: 11px;
       letter-spacing: 0.2em;
-      color: rgba(255,255,255,0.4);
+      color: rgba(255,255,255,0.35);
       margin-bottom: 1.5rem;
     }
-
     h1 {
       font-size: clamp(2rem, 5vw, 3.5rem);
       font-weight: 700;
       line-height: 1.15;
       max-width: 700px;
       margin-bottom: 1rem;
-      text-shadow: 0 0 40px rgba(255,255,255,0.15);
+      text-shadow: 0 0 60px rgba(255,255,255,0.12);
     }
-
     p {
       max-width: 480px;
-      color: rgba(255,255,255,0.5);
+      color: rgba(255,255,255,0.45);
       font-size: 15px;
       line-height: 1.7;
       margin-bottom: 2.5rem;
     }
-
-    .buttons {
-      display: flex;
-      gap: 1rem;
-      pointer-events: all;
-    }
-
+    .buttons { display: flex; gap: 1rem; pointer-events: all; }
     .btn {
       padding: 0.75rem 1.75rem;
       border-radius: 999px;
       font-size: 14px;
       cursor: pointer;
-      transition: opacity 0.2s;
     }
-
     .btn-primary {
-      background: rgba(255,255,255,0.1);
-      border: 1px solid rgba(255,255,255,0.3);
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.25);
       color: #fff;
       backdrop-filter: blur(10px);
     }
-
     .btn-ghost {
       background: transparent;
-      border: 1px solid rgba(255,255,255,0.15);
-      color: rgba(255,255,255,0.6);
+      border: 1px solid rgba(255,255,255,0.12);
+      color: rgba(255,255,255,0.55);
     }
-
     #cursor {
       position: fixed;
-      width: 10px; height: 10px;
+      width: 8px; height: 8px;
       background: #fff;
       border-radius: 50%;
       transform: translate(-50%, -50%);
       pointer-events: none;
       z-index: 9999;
       mix-blend-mode: difference;
-      transition: transform 0.08s ease;
     }
   </style>
 </head>
@@ -107,7 +86,7 @@
 <div class="content">
   <div class="label">— EXPERIMENTO VISUAL —</div>
   <h1>Energía que sigue cada movimiento</h1>
-  <p>Mueve el cursor por la pantalla y haz click para ver la reacción del anillo de plasma.</p>
+  <p>Mueve el cursor cerca del anillo y haz click para ver la reacción.</p>
   <div class="buttons">
     <button class="btn btn-primary">Comenzar ▶</button>
     <button class="btn btn-ghost">Ver más</button>
@@ -127,242 +106,232 @@ let H = canvas.height = window.innerHeight;
 window.addEventListener('resize', () => {
   W = canvas.width  = window.innerWidth;
   H = canvas.height = window.innerHeight;
+  CX = W / 2; CY = H / 2;
 });
 
-// ── Estado del mouse ────────────────────────────────────────────────
-const mouse = { x: W / 2, y: H / 2 };
-const target = { x: W / 2, y: H / 2 };   // posición suavizada del anillo
+let CX = W / 2, CY = H / 2;   // centro fijo
 
+const mouse = { x: W / 2, y: H / 2 };
 window.addEventListener('mousemove', e => {
-  mouse.x = e.clientX;
-  mouse.y = e.clientY;
+  mouse.x = e.clientX; mouse.y = e.clientY;
   cursorEl.style.left = e.clientX + 'px';
   cursorEl.style.top  = e.clientY + 'px';
 });
-
 window.addEventListener('touchmove', e => {
   mouse.x = e.touches[0].clientX;
   mouse.y = e.touches[0].clientY;
 }, { passive: true });
 
-// ── Partículas del anillo ───────────────────────────────────────────
-const NUM_PARTICLES = 220;
-const particles = [];
-
-class RingParticle {
-  constructor(index, total) {
-    this.baseAngle  = (index / total) * Math.PI * 2;
-    this.angle      = this.baseAngle;
-    this.noiseOff   = Math.random() * 1000;
-    this.speed      = 0.004 + Math.random() * 0.003;
-    this.radiusBase = 0;     // se asigna abajo
-    this.radiusNoise= 0;
-    this.x = 0; this.y = 0;
-    this.alpha = 0.6 + Math.random() * 0.4;
-    this.size  = 1.5 + Math.random() * 2.5;
-    // color según ángulo: azul/violeta (izq) → rojo/naranja (der)
-    this.hueBase = (index / total) * 260 + 200; // 200→460 (wraps)
-  }
-
-  update(cx, cy, radius, time, energyBoost) {
-    this.angle = this.baseAngle + time * this.speed * 60;
-
-    // Ruido suave para irregularidad del anillo
-    const n = simplex(
-      Math.cos(this.angle) * 0.5 + this.noiseOff,
-      Math.sin(this.angle) * 0.5 + time * 0.3
-    );
-    this.radiusNoise = n * 28;
-
-    const r = radius + this.radiusNoise + energyBoost * 30;
-    this.x = cx + Math.cos(this.angle) * r;
-    this.y = cy + Math.sin(this.angle) * r;
-  }
-
-  draw(time) {
-    const hue = (this.hueBase + time * 10) % 360;
-    ctx.beginPath();
-    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
-    ctx.fillStyle = `hsla(${hue}, 100%, 65%, ${this.alpha})`;
-    ctx.shadowColor = `hsla(${hue}, 100%, 70%, 0.8)`;
-    ctx.shadowBlur  = 12;
-    ctx.fill();
-  }
-}
-
-for (let i = 0; i < NUM_PARTICLES; i++) {
-  particles.push(new RingParticle(i, NUM_PARTICLES));
-}
-
-// ── Partículas de explosión al click ───────────────────────────────
-const bursts = [];
-
-class BurstParticle {
-  constructor(x, y) {
-    const angle = Math.random() * Math.PI * 2;
-    const speed = 3 + Math.random() * 8;
-    this.x = x; this.y = y;
-    this.vx = Math.cos(angle) * speed;
-    this.vy = Math.sin(angle) * speed;
-    this.alpha = 1;
-    this.size  = 1.5 + Math.random() * 3;
-    this.hue   = 200 + Math.random() * 160;
-    this.done  = false;
-  }
-  update() {
-    this.x += this.vx;
-    this.y += this.vy;
-    this.vx *= 0.95;
-    this.vy *= 0.95;
-    this.alpha -= 0.022;
-    if (this.alpha <= 0) this.done = true;
-  }
-  draw() {
-    ctx.save();
-    ctx.globalAlpha = Math.max(0, this.alpha);
-    ctx.beginPath();
-    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
-    ctx.fillStyle = `hsl(${this.hue}, 100%, 65%)`;
-    ctx.shadowColor = `hsl(${this.hue}, 100%, 70%)`;
-    ctx.shadowBlur = 10;
-    ctx.fill();
-    ctx.restore();
-  }
-}
-
-// Ondas de click
-const ripples = [];
-class ClickRipple {
-  constructor(x, y) {
-    this.x = x; this.y = y;
-    this.r = 0;
-    this.maxR = 180;
-    this.alpha = 0.8;
-    this.hue = 220 + Math.random() * 120;
-    this.done = false;
-  }
-  update() {
-    this.r += 5;
-    this.alpha = 0.8 * (1 - this.r / this.maxR);
-    if (this.r >= this.maxR) this.done = true;
-  }
-  draw() {
-    ctx.save();
-    ctx.globalAlpha = Math.max(0, this.alpha);
-    ctx.strokeStyle = `hsl(${this.hue}, 100%, 65%)`;
-    ctx.lineWidth = 2;
-    ctx.shadowColor = `hsl(${this.hue}, 100%, 70%)`;
-    ctx.shadowBlur = 15;
-    ctx.beginPath();
-    ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.restore();
-  }
-}
-
-let energyBoost = 0;
-
-function spawnClick(x, y) {
-  energyBoost = 1;
-  for (let i = 0; i < 60; i++) bursts.push(new BurstParticle(x, y));
-  for (let i = 0; i < 3; i++) {
-    setTimeout(() => ripples.push(new ClickRipple(x, y)), i * 70);
-  }
-}
-
-window.addEventListener('click', e => spawnClick(e.clientX, e.clientY));
-window.addEventListener('touchstart', e => {
-  spawnClick(e.touches[0].clientX, e.touches[0].clientY);
-}, { passive: true });
-
-// ── Ruido simplex (simplificado, 2D) ───────────────────────────────
-// Implementación ligera sin librerías externas
-function simplex(x, y) {
-  const F2 = 0.5 * (Math.sqrt(3) - 1);
-  const G2 = (3 - Math.sqrt(3)) / 6;
-  const s  = (x + y) * F2;
-  const i  = Math.floor(x + s);
-  const j  = Math.floor(y + s);
-  const t  = (i + j) * G2;
-  const X0 = i - t, Y0 = j - t;
-  const x0 = x - X0, y0 = y - Y0;
-  const i1 = x0 > y0 ? 1 : 0;
-  const j1 = x0 > y0 ? 0 : 1;
-  const x1 = x0 - i1 + G2, y1 = y0 - j1 + G2;
-  const x2 = x0 - 1 + 2*G2, y2 = y0 - 1 + 2*G2;
-
-  const gi0 = grad2(perm[(i   + perm[ j      & 255]) & 255]);
-  const gi1 = grad2(perm[(i+i1+ perm[(j+j1)  & 255]) & 255]);
-  const gi2 = grad2(perm[(i+1 + perm[(j+1)   & 255]) & 255]);
-
-  let n0 = 0, n1 = 0, n2 = 0;
-  let t0 = 0.5 - x0*x0 - y0*y0;
-  if (t0 >= 0) { t0 *= t0; n0 = t0*t0 * dot2(gi0, x0, y0); }
-  let t1 = 0.5 - x1*x1 - y1*y1;
-  if (t1 >= 0) { t1 *= t1; n1 = t1*t1 * dot2(gi1, x1, y1); }
-  let t2 = 0.5 - x2*x2 - y2*y2;
-  if (t2 >= 0) { t2 *= t2; n2 = t2*t2 * dot2(gi2, x2, y2); }
-
-  return 70 * (n0 + n1 + n2);
-}
-
-const GRAD2 = [[1,1],[-1,1],[1,-1],[-1,-1],[1,0],[-1,0],[0,1],[0,-1]];
-function grad2(h) { return GRAD2[h % 8]; }
-function dot2(g, x, y) { return g[0]*x + g[1]*y; }
-
+// ── Ruido simplex 2D ───────────────────────────────────────────────
 const perm = new Uint8Array(256);
 for (let i = 0; i < 256; i++) perm[i] = i;
 for (let i = 255; i > 0; i--) {
   const j = Math.floor(Math.random() * (i + 1));
   [perm[i], perm[j]] = [perm[j], perm[i]];
 }
+const GRAD2 = [[1,1],[-1,1],[1,-1],[-1,-1],[1,0],[-1,0],[0,1],[0,-1]];
+function dot2(g,x,y){ return g[0]*x+g[1]*y; }
+function simplex(x,y){
+  const F2=0.5*(Math.sqrt(3)-1), G2=(3-Math.sqrt(3))/6;
+  const s=(x+y)*F2, i=Math.floor(x+s), j=Math.floor(y+s);
+  const t=(i+j)*G2, x0=x-(i-t), y0=y-(j-t);
+  const i1=x0>y0?1:0, j1=x0>y0?0:1;
+  const x1=x0-i1+G2, y1=y0-j1+G2;
+  const x2=x0-1+2*G2, y2=y0-1+2*G2;
+  const g0=GRAD2[perm[(i+perm[j&255])&255]%8];
+  const g1=GRAD2[perm[(i+i1+perm[(j+j1)&255])&255]%8];
+  const g2=GRAD2[perm[(i+1+perm[(j+1)&255])&255]%8];
+  let n0=0,n1=0,n2=0;
+  let t0=0.5-x0*x0-y0*y0; if(t0>=0){t0*=t0;n0=t0*t0*dot2(g0,x0,y0);}
+  let t1=0.5-x1*x1-y1*y1; if(t1>=0){t1*=t1;n1=t1*t1*dot2(g1,x1,y1);}
+  let t2=0.5-x2*x2-y2*y2; if(t2>=0){t2*=t2;n2=t2*t2*dot2(g2,x2,y2);}
+  return 70*(n0+n1+n2);
+}
 
-// ── Loop principal ──────────────────────────────────────────────────
+// ── Partículas del anillo ──────────────────────────────────────────
+const NUM = 420;
+const particles = [];
+
+class RingParticle {
+  constructor(idx, total) {
+    this.baseAngle = (idx / total) * Math.PI * 2;
+    this.angle     = this.baseAngle;
+    this.noiseOff  = Math.random() * 800;
+    this.orbitSpeed= (0.003 + Math.random() * 0.004) * (Math.random()<0.5?1:-1);
+    // tamaño variado: mayoría pequeñas, algunas grandes
+    const r = Math.random();
+    this.size = r < 0.7 ? 1 + Math.random() * 2
+              : r < 0.9 ? 2.5 + Math.random() * 3
+              :            5   + Math.random() * 4;
+    this.alpha    = 0.5 + Math.random() * 0.5;
+    // posición actual (se actualiza cada frame)
+    this.x = 0; this.y = 0;
+    // hue base distribuido en el anillo: azul → violeta → rojo → naranja
+    this.hueBase  = (idx / total) * 200 + 190;  // 190..390
+    // radio offset personal
+    this.rOffset  = (Math.random() - 0.5) * 30;
+    // velocidad de atracción al mouse
+    this.mouseVX  = 0;
+    this.mouseVY  = 0;
+  }
+
+  update(radius, time) {
+    // avance angular continuo
+    this.angle += this.orbitSpeed;
+
+    // ruido en radio
+    const n = simplex(
+      Math.cos(this.angle) * 0.6 + this.noiseOff,
+      Math.sin(this.angle) * 0.6 + time * 0.25
+    );
+    const r = radius + this.rOffset + n * 24;
+
+    // posición base sobre el anillo
+    const bx = CX + Math.cos(this.angle) * r;
+    const by = CY + Math.sin(this.angle) * r;
+
+    // atracción al mouse solo si está cerca (< 180px)
+    const dx = mouse.x - bx;
+    const dy = mouse.y - by;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    const ATTRACT_RADIUS = 180;
+    const ATTRACT_FORCE  = 0.018;
+
+    if (dist < ATTRACT_RADIUS) {
+      const strength = (1 - dist / ATTRACT_RADIUS) * ATTRACT_FORCE;
+      this.mouseVX += dx * strength;
+      this.mouseVY += dy * strength;
+    }
+    // amortiguación suave del desplazamiento
+    this.mouseVX *= 0.88;
+    this.mouseVY *= 0.88;
+
+    this.x = bx + this.mouseVX;
+    this.y = by + this.mouseVY;
+  }
+
+  draw(time) {
+    const hue = (this.hueBase + time * 8) % 360;
+    const glow = this.size > 4 ? 20 : this.size > 2.5 ? 12 : 6;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fillStyle   = `hsla(${hue}, 100%, 68%, ${this.alpha})`;
+    ctx.shadowColor = `hsla(${hue}, 100%, 75%, 0.9)`;
+    ctx.shadowBlur  = glow;
+    ctx.fill();
+  }
+}
+
+for (let i = 0; i < NUM; i++) particles.push(new RingParticle(i, NUM));
+
+// ── Bursts y ripples de click ──────────────────────────────────────
+const bursts = [], ripples = [];
+
+class BurstParticle {
+  constructor(x, y) {
+    const a = Math.random() * Math.PI * 2;
+    const s = 2 + Math.random() * 9;
+    this.x=x; this.y=y;
+    this.vx=Math.cos(a)*s; this.vy=Math.sin(a)*s;
+    this.alpha=1;
+    this.size=1+Math.random()*3.5;
+    this.hue=190+Math.random()*170;
+    this.done=false;
+  }
+  update(){ this.x+=this.vx; this.y+=this.vy; this.vx*=0.94; this.vy*=0.94; this.alpha-=0.02; if(this.alpha<=0)this.done=true; }
+  draw(){
+    ctx.save(); ctx.globalAlpha=Math.max(0,this.alpha);
+    ctx.beginPath(); ctx.arc(this.x,this.y,this.size,0,Math.PI*2);
+    ctx.fillStyle=`hsl(${this.hue},100%,65%)`;
+    ctx.shadowColor=`hsl(${this.hue},100%,70%)`; ctx.shadowBlur=10;
+    ctx.fill(); ctx.restore();
+  }
+}
+class ClickRipple {
+  constructor(x,y){
+    this.x=x;this.y=y;this.r=0;this.maxR=200;
+    this.alpha=0.9;this.hue=210+Math.random()*130;this.done=false;
+  }
+  update(){ this.r+=5; this.alpha=0.9*(1-this.r/this.maxR); if(this.r>=this.maxR)this.done=true; }
+  draw(){
+    ctx.save(); ctx.globalAlpha=Math.max(0,this.alpha);
+    ctx.strokeStyle=`hsl(${this.hue},100%,65%)`; ctx.lineWidth=2;
+    ctx.shadowColor=`hsl(${this.hue},100%,70%)`; ctx.shadowBlur=18;
+    ctx.beginPath(); ctx.arc(this.x,this.y,this.r,0,Math.PI*2); ctx.stroke();
+    ctx.restore();
+  }
+}
+
+let energyBoost = 0;
+function spawnClick(x,y){
+  energyBoost=1;
+  for(let i=0;i<80;i++) bursts.push(new BurstParticle(x,y));
+  for(let i=0;i<4;i++) setTimeout(()=>ripples.push(new ClickRipple(x,y)),i*65);
+}
+window.addEventListener('click',e=>spawnClick(e.clientX,e.clientY));
+window.addEventListener('touchstart',e=>spawnClick(e.touches[0].clientX,e.touches[0].clientY),{passive:true});
+
+// ── Halo cromático (dibuja arcos con blur en capas) ────────────────
+function drawHalo(radius, time) {
+  const layers = [
+    { offset:  0,  blur: 60,  alpha: 0.13, hueShift:   0 },
+    { offset: 18,  blur: 90,  alpha: 0.08, hueShift:  30 },
+    { offset:-18,  blur: 90,  alpha: 0.08, hueShift: -30 },
+    { offset: 36,  blur: 120, alpha: 0.05, hueShift:  60 },
+    { offset:-36,  blur: 120, alpha: 0.05, hueShift: -60 },
+  ];
+
+  for (const layer of layers) {
+    const r = radius + layer.offset + energyBoost * 20;
+    // gradiente cónico simulado con múltiples arcos de color
+    const segments = 60;
+    for (let i = 0; i < segments; i++) {
+      const a1 = (i / segments) * Math.PI * 2;
+      const a2 = ((i + 1) / segments) * Math.PI * 2;
+      // hue basado en posición angular: azul/violeta → rojo/naranja
+      const hue = ((i / segments) * 200 + 190 + layer.hueShift + time * 8) % 360;
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(CX, CY, r, a1, a2);
+      ctx.strokeStyle = `hsla(${hue}, 100%, 65%, ${layer.alpha})`;
+      ctx.lineWidth   = layer.blur * 0.35;
+      ctx.shadowColor = `hsla(${hue}, 100%, 70%, 0.6)`;
+      ctx.shadowBlur  = layer.blur;
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+}
+
+// ── Loop principal ─────────────────────────────────────────────────
 let time = 0;
-const RADIUS = () => Math.min(W, H) * 0.32;
+const RADIUS = () => Math.min(W, H) * 0.33;
 
 function loop() {
   time += 0.016;
+  energyBoost *= 0.91;
 
-  // Suavizar posición del anillo hacia el mouse
-  target.x += (mouse.x - target.x) * 0.06;
-  target.y += (mouse.y - target.y) * 0.06;
-
-  // Decaer energía de click
-  energyBoost *= 0.92;
-
-  // Fondo con trail suave
-  ctx.fillStyle = 'rgba(5, 5, 15, 0.18)';
+  // Trail oscuro
+  ctx.fillStyle = 'rgba(5, 5, 15, 0.22)';
   ctx.fillRect(0, 0, W, H);
 
-  // Halo de luz central del anillo
   const r = RADIUS();
-  const grd = ctx.createRadialGradient(target.x, target.y, r * 0.55, target.x, target.y, r * 1.3);
-  grd.addColorStop(0, 'rgba(80,40,160,0)');
-  grd.addColorStop(0.5, `rgba(60,20,140,${0.07 + energyBoost * 0.08})`);
-  grd.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = grd;
-  ctx.fillRect(0, 0, W, H);
 
-  // Partículas del anillo
+  // Halo cromático tenue detrás de las partículas
+  drawHalo(r, time);
+
+  // Partículas
   ctx.save();
   for (const p of particles) {
-    p.update(target.x, target.y, r, time, energyBoost);
+    p.update(r, time);
     p.draw(time);
   }
   ctx.restore();
 
-  // Bursts y ripples de click
-  for (let i = bursts.length - 1; i >= 0; i--) {
-    bursts[i].update();
-    bursts[i].draw();
-    if (bursts[i].done) bursts.splice(i, 1);
-  }
-  for (let i = ripples.length - 1; i >= 0; i--) {
-    ripples[i].update();
-    ripples[i].draw();
-    if (ripples[i].done) ripples.splice(i, 1);
-  }
+  // Bursts y ripples
+  for(let i=bursts.length-1;i>=0;i--){bursts[i].update();bursts[i].draw();if(bursts[i].done)bursts.splice(i,1);}
+  for(let i=ripples.length-1;i>=0;i--){ripples[i].update();ripples[i].draw();if(ripples[i].done)ripples.splice(i,1);}
 
   requestAnimationFrame(loop);
 }
